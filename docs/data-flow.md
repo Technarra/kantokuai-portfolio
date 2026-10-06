@@ -1,8 +1,8 @@
 # KantokuAI — API・保存先・LLM入力と個人情報の境界
 
-[READMEへ戻る](../README.md) · [動画制作の体験設計](architecture.md) · [開発画面](screenshots.md) · [検証範囲](validation.md)
+[READMEへ戻る](../README.md) · [動画制作の流れとAIの分担](architecture.md) · [開発で考えたこと（詳細）](decisions.md) · [テストと検証](validation.md)
 
-**どの画面が何を呼び、どの情報を端末・クラウド・外部AIへ渡すか**を、iOS・共通backendの実装から整理しています。基準は `3409852c`、確認日は2026-10-06です。APIは相対パスと代表的な入力分類を示し、運用URL、資格情報、実データ、全文プロンプト、完全なAPI契約は掲載していません。
+**どの画面が何を呼び、どの情報を端末・クラウド・外部AIへ渡すか**を、2026年10月時点のiOS・共通backendの実装から整理しています。APIは相対パスと代表的な入力の種類だけを示し、運用URL、資格情報、実データ、プロンプトの全文は載せていません。
 
 ローカルに保存していても、その一部をLLM要求へ送ることがあります。また、認証・所有者の検査と、入力文中の個人情報の匿名化は別の責務です。
 
@@ -66,7 +66,7 @@ sequenceDiagram
     D->>D: 元動画を保持してカット・編集へ進む
 ```
 
-このAPIはAのジョブ作成・`GET`復旧とは異なります。同期の素材候補APIや、必要時の字幕注釈APIも同じ区分です。通信中の離脱・失敗を、全てクラウドジョブとして復旧できるとはしていません。
+このAPIはAのジョブ作成・`GET`復旧とは異なります。同期の素材候補APIや、必要時の字幕注釈APIも同じ区分です。通信中の離脱や失敗は、クラウドジョブのようには復旧できません。
 
 ### C. 端末処理と、SDKによる同期
 
@@ -82,9 +82,9 @@ sequenceDiagram
 | --- | --- | --- | --- |
 | 会話・台本・シーン | Core Dataにプロジェクトとの対応を保存 | 生成要求に採用した会話・台本はジョブへ保存 | 選んだ会話、現在の台本、修正指示 |
 | 制作プロフィール | UserDefaults。アカウント切替時の保存・復元を管理 | ログイン済み、非空、前回から変更ありの場合、Firestoreへ項目を選んで同期。ローカルが空なら復元する経路 | 用途と前提コンテキスト設定に応じた発信者像、文体、撮影制約等。自由記述に含めた個人情報も送信対象になり得る |
-| 本人メモリ・学習signal | アカウント別UserDefaultsに構造化JSONを保存 | 選んだ文脈は生成要求の一部として保存。本体ストア全体を常時同期する経路は今回確認していない | 有効な確認済み情報・制約、用途に応じた未確認資料の参考情報 |
+| 本人メモリ・学習signal | アカウント別UserDefaultsに構造化JSONを保存 | 選んだ文脈は生成要求の一部として保存。本体ストア全体を常時同期する経路は見当たらない | 有効な確認済み情報・制約、用途に応じた未確認資料の参考情報 |
 | 文書・画像の原資料 | アカウント別Documents。取り込んだ文書からテキストを抽出 | 文書要約の要求には、選んだ抽出文とファイル名が含まれる。プロフィール同期payloadには原ファイルのバイナリを含めない | 文書要約ではファイル名と抽出文の抜粋。原本が端末保存でも、抜粋の内容が外部へ出る |
-| 元録画 | 端末ファイル。音声抽出、時間計算、編集、最終合成 | 音声認識APIへ抽出した音声を送る。確認したAPIは本文・音声を処理中に扱い、音声をFirestore/Storageへ永続保存する呼出しは確認していない | GPT系認識とWhisperへ音声。GPT系認識には題材・説明も補助文脈として渡す |
+| 元録画 | 端末ファイル。音声抽出、時間計算、編集、最終合成 | 音声認識APIへ抽出した音声を送る。APIは本文・音声を処理中だけ扱い、音声をFirestore/Storageへ保存する処理は見当たらない | GPT系認識とWhisperへ音声。GPT系認識には題材・説明も補助文脈として渡す |
 | 録画後の構成 | 発話ID・元録画時刻・編集状態を保持 | Cloud Storageに構成要求・結果JSON、Firestoreに所有者・状態・保存参照 | 元台本を参考資料として渡し、保持した発話ID・本文から構成を判断。元動画全体の送信とは分けている |
 | 見本画像・AI音声 | 取得後の画像・音声を制作物へ保存 | Cloud Storageに生成メディア、Firestoreに状態と参照。APIが認証後に取得して返す経路 | 画像には撮影構成から作った画像prompt、音声にはセリフ・読み方・voice設定 |
 | 共有プロジェクト | `CodexStoryboardCloudImporter`がローカルへ取り込む | Firestoreから台本・シーン・画像・音声を読む別経路 | 取り込んだ制作内容を後で生成要求へ選べば送信される。通常画面の全編集が常時同期されるとはしていない |
@@ -98,7 +98,7 @@ sequenceDiagram
 | --- | --- | --- | --- |
 | **A** 対話・台本案：`IdeaChatService` → `BackendAgentGateway` → `CloudTextGenerationJobClient` | `POST /v1/text-jobs`、`GET /v1/text-jobs/{id}` | `TextJobService` → Anthropicのmessages。systemと選んだuser/assistant履歴から応答 | Firestoreの所有者付きジョブに要求・状態・本文結果。実行中の部分本文を扱う経路もある |
 | **A** 撮影準備：`StoryboardRecordingPreparationCloudSupport` → `CloudProjectGenerationJobClient` | `POST /v1/project-jobs`、`GET /v1/project-jobs/{id}` | 通し撮影用のテンプレートIDと変数 → Claude撮影プラン → OpenAI見本画像 | 要求はFirestore artifact（大きい場合は分割）、状態・構成結果はFirestore、生成画像はStorage |
-| **B** 撮影後の発話認識：`StoryboardTranscriptionComparison` → `BackendAPIClient` | `POST /v1/recording-transcriptions` | `ExperimentalTranscriptionService`の制作経路 → GPT系本文認識とWhisperを並行実行。本文整理、時刻との照合 | 同期応答。このAPI内での音声の永続保存呼出しは今回確認していない |
+| **B** 撮影後の発話認識：`StoryboardTranscriptionComparison` → `BackendAPIClient` | `POST /v1/recording-transcriptions` | `ExperimentalTranscriptionService`の制作経路 → GPT系本文認識とWhisperを並行実行。本文整理、時刻との照合 | 同期応答。このAPIで音声を永続保存する処理は見当たらない |
 | **A** 録画後の構成：`RecordingStructureRecovery` → `BackendAPIClient` | `POST /v1/recording-structure-jobs`、`GET /v1/recording-structure-jobs/{id}` | `RecordingStructureJobService` → `RecordingStructureService` → Claudeの構造化出力 → ID・原文・順番を検査 | 要求・結果JSONはStorage、所有者・状態・要求digest・参照はFirestore |
 | **B** 素材候補の再提案：`RecordingMaterialSuggestions` → `BackendAPIClient` | `POST /v1/recording-material-suggestions/standalone` | 現在の発話構成 → Claude strict tool → 提案対象と構成を検査 | 同期応答。適用後は端末の制作データへ保存 |
 | **A** AIナレーション：`CloudProjectGenerationJobClient`の音声を含む生成要求 | `POST /v1/project-jobs`、状態取得 | worker → Google TTS。セリフ・読み方・voice・音声形式を指定 | 生成音声はStorage、状態・音声参照はFirestore、取得後は端末にも保存 |
@@ -140,7 +140,7 @@ flowchart TD
 
 プロンプト正本からSwiftとbackend向けの生成物を作り、端末は埋込テンプレートと`GET /v1/prompt-templates/catalog`で取得・保存したcatalogをrendererで扱います。撮影準備はテンプレートID `scene.planning` と台本・会話要約・制作ガイダンス・画角等の入力を組み立て、backendで計画用promptへ変換します。独自テンプレート本文は非公開です。
 
-以下は**基準ソースでの指定・既定値**です。デプロイ先の環境変数、現在の提供先での実通信、選択肢ごとの成功は今回確認していません。
+以下は**ソースコード上の指定・既定値**です。本番の設定値は環境変数で変わることがあります。
 
 | 用途 | モデル・主な設定 | AIに渡す内容 | 応答と検査 |
 | --- | --- | --- | --- |
@@ -161,7 +161,7 @@ Claude構成のtoolは構成データを返すためのschemaで、モデルに�
 
 LLMの待ち時間にアプリを離れると、端末の監視taskや通信が止まることがあります。そこで、端末の監視寿命と、受け付けたクラウドジョブの処理・結果保存を分けました。会話では離脱時にpendingを保ったまま監視を止め、復帰時にアカウントと会話を照合して同じ要求を確認します。
 
-対話・台本用の文字ジョブがCloud Tasksを使う場合の代表例です。Cloud Runだけで継続・復旧が保証されるとはしていません。queueを使わずbackend内で実行する文字ジョブの分岐もありますが、instanceの寿命に依存し、永続queueと同等の耐久性を主張しません。録画構成ジョブはqueueが必須です。
+対話・台本用の文字ジョブが、Cloud Tasksを使う場合の代表例です。queueを使わずbackend内で実行する分岐もあり、その場合はinstanceの寿命に左右されます。録画構成ジョブはqueueを必須にしています。
 
 ```mermaid
 sequenceDiagram
@@ -202,11 +202,11 @@ Cloud Tasksへ大きな会話本文を毎回載せるのではなく、保存し
 | **C 端末の書き出し** | 現在は画面ロック・アプリがactiveでなくなった場合に中止。クラウド生成の離脱対応とは別 |
 | 完了通知 | 一部のプロジェクト生成には設定付きの通知経路がある。全ジョブの通知・背景での画面更新・自動反映は保証しない |
 
-送信が受理される前の離脱、認証切れ、queue設定やworkerの失敗は別の失敗条件です。「どんなタイミングで離れても必ず完了する」という説明にはしていません。
+送信が受理される前の離脱、認証切れ、queueの設定やworkerの失敗は、別の失敗として扱います。
 
 録画の音声認識は、この非同期文字ジョブとは別の同期APIです。[音声認識・本文整理・Whisper時刻・Claude構成のシーケンス](architecture.md)も参照してください。
 
-## 5. 個人情報を守るための実装と、保証しないこと
+## 5. 個人情報を守るための実装と、その限界
 
 | 境界・操作 | 確認した実装 | 保護の範囲・限界 |
 | --- | --- | --- |
@@ -218,13 +218,13 @@ Cloud Tasksへ大きな会話本文を毎回載せるのではなく、保存し
 | ログ・エラー | 対象診断の本文ログはReleaseで無効、Debugでは明示有効化。資格情報形式のredactor、本文を載せないbackendイベント、providerエラーの本文抑制 | 対象経路での漏えい抑制。資格情報redactorは個人情報全般の匿名化器ではなく、アプリ中の全ログの無害化を保証しない |
 | 通知 | push本文へ非公開の台本タイトルを含めない。アカウント切替時に通知内容を破棄する処理 | ロック画面や遅延通知での制作内容の露出を抑える。通知token・配信情報はクラウドで扱う |
 | メモリの訂正・取消・削除 | 有効状態を更新し、由来のある派生メモリや学習signalにも取消等を反映 | 以降の選択から外す処理。すでに送ったジョブ・外部提供先の保持データが同時に消えるという意味ではない |
-| アカウント削除 | 最近の認証を要求し、Firestoreの利用者・ジョブ・通知情報、設定されたStorageの利用者prefix等を削除する経路 | 本文のprovider cacheや外部提供先の削除まで連動する実装は今回確認していない。会計・削除管理には識別子を変換して残す経路がある |
+| アカウント削除 | 最近の認証を要求し、Firestoreの利用者・ジョブ・通知情報、設定されたStorageの利用者prefix等を削除する経路 | 本文のprovider cacheや外部提供先の削除まで連動するかは未確認。会計・削除管理には識別子を変換して残す経路がある |
 | 保存期間 | Storageの30日削除lifecycle設定ファイルがある | ファイルの存在と実際の適用は別。FirestoreジョブのTTL、バックアップ、各提供先の保持期間・学習利用設定は未確認 |
 
 出典・確認状態は「本人の事実とAI補足を混ぜない」ための設計です。本人確認済みの情報にも個人情報はあり得ます。送信前の表示・同意、汎用PII除去、保存期間の実測、provider設定、クラウドと端末をまたぐ削除完了の確認は、さらに評価・改善する項目です。
 
-## 6. 確認根拠
+## 6. 対応するコード
 
 呼出しは`IdeaChatService`、`BackendAgentGateway`、`BackendAPIClient`、各ジョブclientと対応するFastAPI route・serviceで確認しました。保存は`UserMemoryStore`、`UserProfileManager`、`CloudUserProfilePayload`、`FirebaseService`、`AccountScopedLocalData`、ジョブserviceで確認しています。
 
-モデル・入力・構造化出力はproviderへのpayload構築と契約検査、個人情報に関する扱いは診断・通知・rules・アカウント削除のコードと対応試験定義を確認しました。今回の作業は説明資料の追加で、アプリ試験・AI実通信・実機E2E・本番設定の監査は実施していません。[検証範囲](validation.md)に確認済みと未確認を分けています。
+モデル・入力・構造化出力はproviderへのpayload構築と契約検査、個人情報に関する扱いは診断・通知・rules・アカウント削除のコードと、対応するテストで確認しました。テストと自動検査の内容は[テストと検証](validation.md)にまとめています。
