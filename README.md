@@ -32,7 +32,7 @@
 | <img src="assets/kantokuai-ui-editor.png" width="260" alt="話した内容から作った字幕と素材を、時間軸で編集する画面"> | <img src="assets/kantokuai-ui-proposal.png" width="260" alt="補足素材の候補と提案理由を確認する画面"> | <img src="assets/kantokuai-ui-export-complete.png" width="260" alt="書き出し完了後に、投稿用の文章と共有先を表示する画面"> |
 | 話した内容から作った字幕とカットを、時間軸で確認・調整します。 | 補足素材の候補と提案理由を見て、使うかどうかを決めます。 | 書き出した動画を、投稿用の文章と一緒にSNSへ共有できます。 |
 
-画面は2026年9月の開発版です。[全10画面と各画面の説明](docs/screenshots.md)
+画面は2026年9月の開発版です。[全8画面と各画面の説明](docs/screenshots.md)
 
 ## 3. Why — 作った理由と、重視したこと
 
@@ -132,4 +132,4 @@ flowchart TD
 ## 7. Notes — 補足
 
 - 制作時間の短縮など、利用者にとっての効果の検証はこれからです。
-- 詳しい資料：[開発で考えたこと（詳細）](docs/decisions.md) · [動画制作の流れとAIの分担](docs/architecture.md) · [API・保存先・LLM入力](docs/data-flow.md) · [全10画面](docs/screenshots.md) · [テストと検証](docs/validation.md)
+- 詳しい資料：[開発で考えたこと（詳細）](docs/decisions.md) · [動画制作の流れとAIの分担](docs/architecture.md) · [API・保存先・LLM入力](docs/data-flow.md) · [全8画面](docs/screenshots.md) · [テストと検証](docs/validation.md)
