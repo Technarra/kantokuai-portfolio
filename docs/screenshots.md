@@ -1,96 +1,82 @@
 # KantokuAI — 画面で見る動画制作の流れ
 
-[READMEへ戻る](../README.md) · [動画制作とAIの設計](architecture.md) · [検証結果](validation.md)
+[READMEへ戻る](../README.md) · [開発で考えたこと（詳細）](decisions.md) · [動画制作の流れとAIの分担](architecture.md)
 
-対話、台本、撮影、編集の9画面を、利用者の操作順に沿って紹介します。各画像を開くと、元の解像度で確認できます。
+企画から書き出しまでの10画面を、操作の順に紹介します。画像を開くと、元の解像度で見られます。
 
-**画像は2026年9月の実アプリの開発記録です。** 撮影日・環境・題材が異なり、同じ動画の完成までを連続撮影した記録ではありません。AIの役割は確認した実装から説明し、静止画だけでは生成結果・自動スクロール・書き出しの動作成功を判定しません。
+## 1. 企画と台本
 
-## 1. 企画と台本を育てる
+### ① 伝えたいことを対話で決める
 
-### ① 伝えたい題材を対話で具体化する
+AIの質問に答えたり、選択肢を選んだりしながら、動画で伝える内容を具体的にします。毎回文章を考えて入力しなくても進められるよう、返答の候補を選択肢として出しています。工場の紹介を題材にした架空のデモです。
 
-経験や伝えたいことを話し、台本の材料を集める入口です。AIは質問と整理を担当し、会話・本人の素材・確認済みメモリを台本の文脈へつなぎます。工場の紹介を題材にした架空デモです。
-
-<a href="../assets/kantokuai-ui-chat.png"><img src="../assets/kantokuai-ui-chat.png" width="360" alt="工場紹介のデモで企画を対話する画面"></a>
+<a href="../assets/kantokuai-ui-chat.png"><img src="../assets/kantokuai-ui-chat.png" width="360" alt="工場紹介のデモで、AIの質問に答えながら企画を決める画面"></a>
 
 ### ② シーンごとのセリフを確認する
 
-対話から育てた台本を、シーン単位で読み直す画面です。文章生成を撮影につなぐため、セリフとシーンを制作データとして保持します。利用者が内容を確認してから撮影へ進む設計です。
+対話から作った台本を、シーン単位で読み直します。セリフとシーンを制作データとして持つので、そのまま撮影と編集につながります。
 
-<a href="../assets/kantokuai-ui-script.png"><img src="../assets/kantokuai-ui-script.png" width="360" alt="架空の工場デモの台本をシーン単位で確認する画面"></a>
+<a href="../assets/kantokuai-ui-script.png"><img src="../assets/kantokuai-ui-script.png" width="360" alt="架空の工場デモの台本を、シーン単位で確認する画面"></a>
 
-### ③ シーンの修正内容を指示する
+### ③ 直したいところを選んで指示する
 
-セリフ、シーン、撮影方法、画角・構図、場所・背景、見本画像など、見直す対象を選ぶ入口です。AIへの指示と制作データの更新をつなぎ、生成後も内容を直せる流れを設けています。この画像は修正指示前で、修正結果の適用を示していません。
+セリフ、シーン、撮影方法、画角・構図、場所・背景、見本画像などから直したい対象を選び、AIに修正を頼む入口です。生成した後も、自分の意図に合わせて直せるようにしています。
 
-<a href="../assets/kantokuai-ui-scene-revision.png"><img src="../assets/kantokuai-ui-scene-revision.png" width="360" alt="シーンの修正対象を選ぶ入口の画面"></a>
+<a href="../assets/kantokuai-ui-scene-revision.png"><img src="../assets/kantokuai-ui-scene-revision.png" width="360" alt="シーンの修正対象を選ぶ画面"></a>
 
-## 2. 撮影方法を選び、話す内容を支える
+## 2. 撮影
 
-### ④ 自分の声・既存動画・AI音声から選ぶ
+### ④ 撮り方を選ぶ
 
-利用者が用意できる素材に合わせて、制作方法を分けています。自分で撮影する場合は撮影準備へ、既存動画は取り込みへ、AI音声はナレーション生成と素材編集へつながります。撮影プランと見本画像の生成は、この画面の裏側で扱う別の処理です。
+「自分の音声で撮る」「スマホから選択」「AI音声で始める」の3つから選びます。自分で撮る場合は、動画全体の撮影プランと見本画像を確認してからカメラへ進みます。この画像は、撮影プランがまだ入っていない状態です。
 
-この画像の撮影プラン欄は未入力の表示です。下部の加工写真は見本用の参考素材で、生成済み撮影プランやAI生成画像の成功例ではありません。
-
-<a href="../assets/kantokuai-ui-capture-entry.png"><img src="../assets/kantokuai-ui-capture-entry.png" width="360" alt="撮影プラン欄が未入力の状態で、自分の声・端末の動画・AI音声を選ぶ画面"></a>
+<a href="../assets/kantokuai-ui-capture-entry.png"><img src="../assets/kantokuai-ui-capture-entry.png" width="360" alt="自分の音声・スマホの動画・AI音声から撮り方を選ぶ画面"></a>
 
 ### ⑤ カンペの読みやすさを調整する
 
-台本の文字サイズとスクロール速度を調整し、表示例で確認する収録設定です。AIが台本を提案しても、実際に話す人に合わなければ撮影へ進みにくいため、読む体験は利用者が調整できるようにしています。この設定・表示は端末のUI処理です。
+文字の大きさと流れる速さを、表示例を見ながら調整します。AIが台本を作っても、話す人が読みにくければ撮影は進まないので、読み方は本人が決められるようにしました。
 
-<a href="../assets/kantokuai-ui-recording-settings.png"><img src="../assets/kantokuai-ui-recording-settings.png" width="360" alt="台本の文字サイズとスクロール速度を設定する画面"></a>
+<a href="../assets/kantokuai-ui-recording-settings.png"><img src="../assets/kantokuai-ui-recording-settings.png" width="360" alt="カンペの文字の大きさとスクロールの速さを設定する画面"></a>
 
 ### ⑥ カンペを見ながら撮影する
 
-カメラ画面へ台本を重ね、画面を移動せずに話す内容を確認できます。AIの文章生成と、端末によるカメラ・カンペ表示を接続する段階です。利用者提供の実機画面で、工場デモとは別の説明動画です。静止画はスクロールや録画全体の検証には使いません。
+カメラ画面に台本を重ねて表示するので、台本を覚えずに、自分の声で話せます。実機での撮影画面です（工場のデモとは別の説明動画）。
 
-<a href="../assets/kantokuai-ui-camera.png"><img src="../assets/kantokuai-ui-camera.png" width="360" alt="別の説明動画の台本をカンペとして重ねた実機撮影画面"></a>
+<a href="../assets/kantokuai-ui-camera.png"><img src="../assets/kantokuai-ui-camera.png" width="360" alt="説明動画の台本をカンペとして重ねた、実機の撮影画面"></a>
 
-## 3. AIの編集案を確認し、素材を加える
+## 3. 編集と書き出し
 
-### ⑦ 動画・字幕・素材を時間軸で調整する
+### ⑦ 字幕とカットを時間軸で調整する
 
-撮影した発話を、字幕やシーンに対応付けて調整する画面です。裏側では本文認識・整理と単語時刻を組み合わせ、構成候補のID・原文・順番を検査します。意味の判断をAI、元動画との時間対応をコード、仕上がりの確認を利用者が担当します。この画面は別の説明動画を編集中の実機記録です。
+話した内容から作った字幕とカット、追加の素材を、時間軸で確認して直します。言葉の意味の判断はAI、元の動画との時間の対応はコードが担当し、仕上がりは本人が確かめます。実機での編集画面です。
 
-<a href="../assets/kantokuai-ui-editor.png"><img src="../assets/kantokuai-ui-editor.png" width="360" alt="説明動画の字幕と補足素材を時間軸上で編集する実機画面"></a>
+<a href="../assets/kantokuai-ui-editor.png"><img src="../assets/kantokuai-ui-editor.png" width="360" alt="説明動画の字幕と補足素材を、時間軸で編集する実機の画面"></a>
 
-### ⑧ 提案された素材と理由を確認する
+### ⑧ AIの素材提案を確認する
 
-編集のための補足素材について、内容と提案理由を確認する画面です。AIが候補を出し、利用者が採用を判断する設計です。候補の採用・取消・再生成を、対象の制作データに結び付けて扱います。
+発話に合う補足素材の候補と、提案の理由を見て、使うかどうかを決めます。候補は採用・取り消し・作り直しができます。
 
-<a href="../assets/kantokuai-ui-proposal.png"><img src="../assets/kantokuai-ui-proposal.png" width="360" alt="補足素材の内容・理由・採用状態を確認する実機画面"></a>
+<a href="../assets/kantokuai-ui-proposal.png"><img src="../assets/kantokuai-ui-proposal.png" width="360" alt="補足素材の内容と提案理由を確認する実機の画面"></a>
 
-### ⑨ セリフに合わせて素材の追加方法を選ぶ
+### ⑨ セリフに合わせて素材を加える
 
-自分で撮影する、写真を加える、参考画像を用意する入口です。映像だけでは伝わりにくい内容を、セリフに対応する素材で補う操作を示しています。画像内の加工映像は外部の参考動画です。撮影・画像生成・追加が完了したことを示す画像ではありません。
+セリフごとに、撮影する・写真を加える・見本画像を使う、から素材の追加方法を選びます。
 
-<a href="../assets/kantokuai-ui-add-material.png"><img src="../assets/kantokuai-ui-add-material.png" width="360" alt="参考加工映像を使ったデモで、セリフに対応する素材を追加する入口の画面"></a>
+<a href="../assets/kantokuai-ui-add-material.png"><img src="../assets/kantokuai-ui-add-material.png" width="360" alt="セリフに対応する素材の追加方法を選ぶ画面"></a>
 
-## 書き出しまでの接続
+### ⑩ 書き出して共有する
 
-調整した映像・音声・字幕は、端末のAVFoundation等で合成して書き出します。AIの構成提案と、端末が実行する合成処理の分担は[アーキテクチャ](architecture.md)に記載しています。今回の選定画像には書き出し画面を含めていません。同じ基準版・同じ題材で撮影から書き出しまで通したデモを次の検証にしています。
+書き出しが終わると、投稿用の文章と共有先が表示され、そのままSNSへ投稿できます。動画の合成は端末の中で行います。
 
-## 撮影条件と画像の扱い
+<a href="../assets/kantokuai-ui-export-complete.png"><img src="../assets/kantokuai-ui-export-complete.png" width="360" alt="書き出し完了後に、投稿用の文章と共有先を表示する画面"></a>
 
-| 画面 | 原資料の日付 | 環境・内容 |
-| --- | --- | --- |
-| ① 企画の対話 | 2026-09-14 | Simulator。架空の工場紹介デモ |
-| ② 台本 | 2026-09-14 | Simulator。①と同じ題材のデモ |
-| ③ シーン修正 | 2026-09-09 | Simulator。修正指示前の入口 |
-| ④ 撮影方法 | 2026-09-09 | Simulator。撮影プラン未入力、参考写真を表示 |
-| ⑤ 収録設定 | 2026-09-11 | Simulator。文字サイズ・スクロール速度の設定 |
-| ⑥ 撮影カメラ | 2026-09-11 | 利用者提供の実機画像。別の説明動画 |
-| ⑦ 編集 | 2026-09-11 | 利用者提供の実機画像。別の説明動画 |
-| ⑧ 素材提案 | 2026-09-11 | 利用者提供の実機画像。提案・採用状態 |
-| ⑨ 素材追加 | 2026-09-09 | Simulator。参考加工映像を用いたデモ |
+## 撮影した環境
 
-Simulatorは原資料上のiPhone 17 Pro / iOS 26.5です。実機画像の日付は提供・収録資料の記録によります。全画像は1206 × 2622 pxで、ページ上の表示幅だけを指定しています。今回追加した6枚は元ファイルの未改変コピーです。既存の①⑦⑧は公開準備時に付帯メタデータを除いた画像で、原画像との画素データ一致を確認しています。UIや文章を描き直した画像は含めていません。
+①〜⑤・⑨・⑩はSimulator（iPhone 17 Pro / iOS 26.5）、⑥〜⑧は実機の画面です。いずれも2026年9月の開発版で、App Storeで配信中の版とは表示が異なる部分があります。画面の画像は編集していません。
 
 ## 画面内の参考素材の出典
 
-- ④の加工写真：byrev, [Cutting iron](https://commons.wikimedia.org/wiki/File:Cutting_iron.jpg)。出典ページにCC0 1.0の表示を確認しました。
-- ⑨の加工映像：Daniel Smyth, [A machine is cutting metal with a metal cutting tool](https://www.pexels.com/video/a-machine-is-cutting-metal-with-a-metal-cutting-tool-9033891/)。[Pexelsの利用条件](https://www.pexels.com/license/)を確認しました。
+- ④の金属加工の写真：byrev, [Cutting iron](https://commons.wikimedia.org/wiki/File:Cutting_iron.jpg)（CC0 1.0）
+- ⑨・⑩の金属加工の映像：Daniel Smyth, [A machine is cutting metal with a metal cutting tool](https://www.pexels.com/video/a-machine-is-cutting-metal-with-a-metal-cutting-tool-9033891/)（[Pexelsの利用条件](https://www.pexels.com/license/)に基づいて使用）
 
-出典・条件の確認日：2026-10-06。参考素材は自分で撮影した工場や顧客設備として扱っていません。原写真・原動画を単独の素材として再配布していません。アプリの説明用スクリーンショット内で使用しています。素材提供者によるアプリの推奨を示すものでもありません。
+参考素材は、自分で撮影した工場や顧客の設備ではありません。アプリの説明用の画面の中でのみ使っています。
