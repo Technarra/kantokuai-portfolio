@@ -6,7 +6,7 @@
 
 > 課題・要求・設計・実装・改善を説明するポートフォリオです。本体コードは非公開。説明は2026-10-05に確認したiOS・共通backendの実装に基づき、全機能の実機再検証や利用効果の実証とは区別しています。
 
-[動画制作とAIの設計](docs/architecture.md) · [画面と制作フロー](docs/screenshots.md) · [検証結果](docs/validation.md) · [もう一つのプロジェクト：コウジョー](https://github.com/Technarra/kojo-portfolio)
+[動画制作とAIの設計](docs/architecture.md) · [API・データ・LLM入力の図](docs/data-flow.md) · [画面と制作フロー](docs/screenshots.md) · [検証結果](docs/validation.md) · [もう一つのプロジェクト：コウジョー](https://github.com/Technarra/kojo-portfolio)
 
 ## 1. Overview
 
@@ -75,16 +75,41 @@ Android本体は別管理です。この資料で説明するiOS・共通backend
 **対話で集めた本人の素材を、撮影できる台本へ変え、実際の発話を編集可能な動画へつなぎます。**
 
 ```mermaid
-flowchart TD
-    Talk["伝えたい経験を話す<br/>AIが質問・整理"] --> Script["台本を育てる<br/>AIが文章化・部分修正"]
-    Script --> Plan["撮影を具体化する<br/>AIが撮影プラン・見本画像"]
-    Plan --> Capture["自分で撮影 / 既存動画を選択"]
-    Capture --> Transcript["発話を編集へつなぐ<br/>GPT系の本文認識・整理 + Whisperの時刻"]
-    Transcript --> Structure["見せ方を組み立てる<br/>Claudeがシーン・字幕・演出・素材を提案"]
-    Structure --> Edit["再生して直す<br/>利用者がカット・字幕・素材を調整"]
-    Edit --> Export["動画を書き出す<br/>端末で映像・音声・字幕を合成"]
-    Plan --> Voice["AI音声で始める<br/>ナレーション生成・素材追加"]
-    Voice --> Edit
+flowchart TB
+    subgraph Device["iOS端末"]
+        Local["Core Data / UserDefaults / 端末ファイル<br/>会話・台本・本人メモリ・元録画"]
+        App["SwiftUI + 制作サービス<br/>必要な文脈を選び、結果を元データへ照合"]
+        Export["AVFoundation等<br/>映像・音声・字幕を端末で合成"]
+        Local <--> App
+        App --> Export
+    end
+    subgraph Cloud["アプリのクラウド"]
+        API["Cloud Run / FastAPI<br/>認証・利用制御・入出力検査"]
+        DB["Firestore<br/>プロフィール同期・ジョブ状態・要求・結果"]
+        Jobs["Cloud Tasks + worker<br/>長い生成処理を実行"]
+        Blob["Cloud Storage<br/>生成画像・音声、録画構成の要求・結果"]
+        API <--> DB
+        API --> Jobs
+        Jobs <--> DB
+        Jobs <--> Blob
+        API <--> Blob
+    end
+    subgraph Providers["外部AI"]
+        Claude["Claude<br/>対話・台本・撮影計画・発話構成"]
+        OpenAI["OpenAI<br/>音声認識・本文整理・単語時刻・見本画像"]
+        TTS["Google TTS<br/>台本からナレーション"]
+    end
+    App -->|"選択した文脈・抽出音声 + 認証ヘッダー"| API
+    API -->|"状態・生成結果"| App
+    App <-->|"SDKによるプロフィール同期・共有制作物の取込"| DB
+    Jobs <--> Claude
+    Jobs <--> OpenAI
+    Jobs <--> TTS
+    API <-->|"音声認識・本文整理の同期経路"| OpenAI
+    API <-->|"素材候補の同期経路"| Claude
+    style Device fill:#eff6ff,stroke:#2563eb,color:#111827
+    style Cloud fill:#f0fdf4,stroke:#16a34a,color:#111827
+    style Providers fill:#fff7ed,stroke:#ea580c,color:#111827
 ```
 
 | 制作段階 | 体験設計 | AIの役割 | 裏側の構築 |
@@ -98,9 +123,9 @@ flowchart TD
 
 AIへ渡す文脈とメディア処理を分けています。音声認識には抽出した音声、構成判断には台本と発話情報を渡し、最終合成は端末で行います。カット位置を確認できない削除候補は原文・音声を保持し、AIの出力をそのまま編集へ流し込まないよう検査します。
 
-会話・台本・シーンはCore Data、本人メモリはアカウント別UserDefaults、原資料・元録画・編集補助情報は端末ファイル、非同期生成は所有者付きクラウドジョブで扱います。
+会話・台本・シーンはCore Data、本人メモリはアカウント別UserDefaults、原資料・元録画・編集補助情報は端末ファイルで扱います。制作プロフィールにはFirestoreへの同期・復元経路もあり、選んだ本人情報はLLM要求やクラウドのジョブにも含まれます。**ローカル保存、クラウド同期、LLMへの送信は、それぞれ別の境界です。**
 
-[各段階の体験設計・AI入出力・保存・利用者の判断](docs/architecture.md)で、撮影方法の分岐、並行する音声認識、構成検査、中断・復旧の仕組みを説明しています。
+[API・保存先・LLM入力の図](docs/data-flow.md)では、呼び出すSwiftサービス、APIの相対パス、system／userへの情報の組み立て、モデル・出力形式、個人情報保護の実装と未確認事項を説明しています。[制作体験の設計](docs/architecture.md)では、撮影方法の分岐、並行する音声認識、構成検査、中断・復旧を説明しています。
 
 ## 7. Tech Stack — 採用技術と要求の対応
 
