@@ -6,54 +6,73 @@
 
 ローカルに保存していても、その一部をLLM要求へ送ることがあります。また、認証・所有者の検査と、入力文中の個人情報の匿名化は別の責務です。
 
-## 1. 端末・アプリのクラウド・外部AIの全体図
+## 1. 端末・クラウド・APIを三つの経路で読む
+
+一枚の図へ全通信を重ねず、**A：非同期ジョブ、B：同期API、C：端末内のメディア処理**に分けます。プロフィール同期と共有制作物の取込は、LLMを呼ぶ経路とは別のFirebase SDK通信です。
+
+| 場所 | 担当する責務 | 主に置く情報 |
+| --- | --- | --- |
+| **端末** | 画面、文脈選択、要求の復旧、撮影・音声抽出、時刻計算、編集・合成 | Core Dataの会話・台本・シーン、UserDefaultsのプロフィール・メモリ・pending、元録画・原資料・編集情報 |
+| **Cloud RunのAPI** | Firebase／App Check・所有者・利用量を検査し、要求受付と結果取得を提供 | APIは入口。永続的な状態・結果はFirestore／Storageへ保存 |
+| **Cloud Tasks＋Cloud Runのworker** | ジョブIDで処理を実行し、外部AIを呼んで出力を検査・保存 | ジョブの実行状態、結果との対応。アプリの表示継続に依存させない |
+| **Firestore／Cloud Storage** | 結果取得・復旧のために情報を保存 | Firestore：プロフィール、ジョブ状態・要求・本文結果等。Storage：生成メディア、録画構成の要求・結果JSON |
+| **外部AI** | 本文・音声・構成・参考画像・ナレーションを生成／認識 | 選択した処理用の情報を受け取る。提供先の保持設定は別途確認が必要 |
+
+### A. 非同期ジョブ：処理を預け、同じIDで結果へ戻る
+
+対話・台本、撮影準備、録画構成に使う経路です。図のAPIは`/v1/text-jobs`、`/v1/project-jobs`、`/v1/recording-structure-jobs`の代表です。
 
 ```mermaid
-flowchart TB
-    subgraph Device["iOS端末"]
-        UI["SwiftUIの対話・台本・撮影・編集画面"]
-        Context["KantokuPromptBuilder / UserMemoryStore<br/>用途・確認状態・会話予算で文脈を選ぶ"]
-        Local["Core Data：会話・台本・シーン<br/>UserDefaults：プロフィール・本人メモリ・復旧<br/>Documents：原資料・元録画・編集情報"]
-        Client["BackendAgentGateway / 各ジョブclient<br/>BackendAPIClientが認証ヘッダーを付ける"]
-        Compose["AVFoundation等<br/>元動画と編集情報から端末で書き出し"]
-        UI <--> Local
-        Local --> Context --> Client
-        Local --> Compose
-    end
-    subgraph Cloud["アプリのクラウド"]
-        Auth["Firebase Auth / App Check<br/>アカウントとアプリの検証"]
-        API["Cloud Run / FastAPI<br/>API入力・認証・所有者・利用量を検査"]
-        DB["Firestore<br/>制作プロフィール・共有制作物<br/>ジョブ状態・要求・結果・artifact"]
-        Tasks["Cloud Tasks<br/>ジョブIDを渡して実行通知"]
-        Worker["backendのworker<br/>要求を読み、AI実行・出力検査・保存"]
-        Storage["Cloud Storage<br/>生成画像・音声<br/>録画構成の要求JSON・結果JSON"]
-        API --> Auth
-        API <--> DB
-        API --> Tasks --> Worker
-        Worker <--> DB
-        Worker <--> Storage
-        API <--> Storage
-    end
-    subgraph External["外部AI"]
-        Claude["Anthropic / Claude<br/>対話・台本・撮影プラン・録画構成"]
-        OpenAI["OpenAI<br/>音声認識・本文整理・Whisper時刻・画像"]
-        TTS["Google TTS<br/>台本と読み方から音声合成"]
-    end
-    Client -->|"選択文脈 / 抽出音声 + 認証ヘッダー"| API
-    API -->|"状態・生成結果"| Client
-    Client -->|"検査後に制作データへ反映"| Local
-    UI <-->|"Firebase SDK：制作プロフィール同期・共有制作物の取込"| DB
-    Worker <--> Claude
-    Worker <--> OpenAI
-    Worker <--> TTS
-    API <-->|"音声認識・本文整理の同期経路"| OpenAI
-    API <-->|"素材候補の同期経路"| Claude
-    style Device fill:#eff6ff,stroke:#2563eb,color:#111827
-    style Cloud fill:#f0fdf4,stroke:#16a34a,color:#111827
-    style External fill:#fff7ed,stroke:#ea580c,color:#111827
+flowchart TD
+    Request["端末：文脈・要求ID・編集前状態を保存"] -->|"POST /v1/...-jobs"| API["Cloud Run API<br/>認証・所有者・要求を検査"]
+    API -->|"要求・状態を保存"| Job["Firestore / Storage<br/>処理別の保存先"]
+    API -->|"ジョブIDを通知"| Tasks["Cloud Tasks"]
+    Tasks -->|"OIDC付きで実行"| Worker["Cloud Run worker<br/>要求を読み、AIを呼ぶ"]
+    Job -.->|"保存済み要求を読む"| Worker
+    Worker -->|"本文・音声・生成設定"| AI["外部AI<br/>Claude / OpenAI / Google TTS"]
+    AI -->|"生成結果"| Check["Cloud Run worker<br/>出力を検査して保存"]
+    Check --> Result["Firestore / Storage<br/>状態・検査済み結果・生成素材"]
+    Result --> Fetch["Cloud Run API<br/>GET：所有者を照合して返す"]
+    Resume["端末：復帰して要求を確認"] -->|"同じjob IDでGET"| Fetch
+    Fetch --> Apply["端末：復帰して同じjob IDを確認<br/>現在の制作物へ照合して反映"]
+    classDef local fill:#eff6ff,stroke:#2563eb,color:#111827
+    classDef cloud fill:#f0fdf4,stroke:#16a34a,color:#111827
+    classDef external fill:#fff7ed,stroke:#ea580c,color:#111827
+    class Request,Resume,Apply local
+    class API,Job,Tasks,Worker,Check,Result,Fetch cloud
+    class AI external
 ```
 
-青は端末、緑はアプリのクラウド、橙は外部AIです。図の矢印は接続と情報の受け渡しを示し、実行順序は後のシーケンス図で示します。
+青は端末、緑はアプリのクラウド、橙は外部AIです。workerの「AI呼出し」と「出力検査」は同じworker内の前後の処理を分けて描いています。FirestoreとStorageの使い分けは次の保存表・API表に記載しています。
+
+Cloud RunはAPIとworkerを動かす場所、Cloud Tasksは実行を通知する仕組み、Firestore／Storageは復帰時に結果を読むための保存先です。`GET`は状態や既存結果を取得する操作で、同じLLM処理を最初から生成し直す操作とは分けています。
+
+### B. 同期API：このHTTP応答を待つ
+
+撮影後の音声認識の例です。端末が元動画から抽出した音声を送り、Cloud RunのAPIがGPT系認識・本文整理とWhisperを実行して、本文と時刻の対応を返します。
+
+```mermaid
+sequenceDiagram
+    participant D as 端末：元動画・編集
+    participant A as Cloud Run：同期API
+    participant L as OpenAI：認識・本文整理・Whisper
+    D->>D: 元動画から音声を抽出
+    D->>A: POST /v1/recording-transcriptions
+    A->>A: 認証・利用量・入力を検査
+    A->>L: 音声と処理用の文脈・設定
+    L-->>A: 本文・削除候補・単語時刻
+    A->>A: 原文を照合し、本文と時刻を対応付け
+    A-->>D: 同じHTTP要求へ認識結果を返す
+    D->>D: 元動画を保持してカット・編集へ進む
+```
+
+このAPIはAのジョブ作成・`GET`復旧とは異なります。同期の素材候補APIや、必要時の字幕注釈APIも同じ区分です。通信中の離脱・失敗を、全てクラウドジョブとして復旧できるとはしていません。
+
+### C. 端末処理と、SDKによる同期
+
+撮影、写真・動画選択、発話時刻と元録画の照合、シーンのプレビュー、映像・音声・字幕の最終合成は端末で行います。[シーン処理と最終書き出しの図](architecture.md)では、プレビューの最大3件並列・cacheと、書き出し前の停止・終了待ちを分けています。完成動画をクラウドへ送って合成する構成ではありません。最終書き出し前の字幕確認が必要な場合はBのAPIを使います。
+
+制作プロフィール同期・共有制作物の取込は、Firebase SDK → Firestoreです。LLM用のCloud Run APIを経由せず、SDK用rulesで所有者・許可フィールドを検査します。プロフィール同期は、前提コンテキストOFFによって停止する処理ではありません。
 
 外部AIへ渡すのは処理用の本文・音声・設定です。Firebase ID token・App Check tokenはbackend認証用のヘッダーであり、この制作経路のLLM本文へ組み込みません。クラウドのowner UIDやジョブIDと、編集に使う発話IDも別物です。
 
@@ -69,22 +88,23 @@ flowchart TB
 | 録画後の構成 | 発話ID・元録画時刻・編集状態を保持 | Cloud Storageに構成要求・結果JSON、Firestoreに所有者・状態・保存参照 | 元台本を参考資料として渡し、保持した発話ID・本文から構成を判断。元動画全体の送信とは分けている |
 | 見本画像・AI音声 | 取得後の画像・音声を制作物へ保存 | Cloud Storageに生成メディア、Firestoreに状態と参照。APIが認証後に取得して返す経路 | 画像には撮影構成から作った画像prompt、音声にはセリフ・読み方・voice設定 |
 | 共有プロジェクト | `CodexStoryboardCloudImporter`がローカルへ取り込む | Firestoreから台本・シーン・画像・音声を読む別経路 | 取り込んだ制作内容を後で生成要求へ選べば送信される。通常画面の全編集が常時同期されるとはしていない |
-| 完成動画 | AVFoundation等で端末合成し書き出す | この書き出し工程にクラウド合成は使わない | この合成工程でLLMへ完成動画を渡す処理はない |
+| 完成動画 | AVFoundation等で端末合成し書き出す。書き出し前に現在の字幕・編集範囲を照合 | 映像合成は端末。必要な字幕注釈の確認は同期APIへ送る別経路 | 注釈確認では選択発話・シーンの情報を渡す。合成する完成動画全体をLLMへ渡す処理はない |
 
 制作プロフィールのクラウドpayloadには、目的・対象者・商品・文体・撮影場所や制約等を含めます。これは送信する項目の限定であり、入力された人名・住所等の自動除去を保証するものではありません。
 
 ## 2. どこから、何を呼ぶか
 
-| 制作操作・呼出し元 | アプリから呼ぶAPI | backendと外部AIの処理 | 要求・結果のクラウド保存 |
+| 区分・制作操作・呼出し元 | アプリから呼ぶAPI | backendと外部AIの処理 | 要求・結果のクラウド保存 |
 | --- | --- | --- | --- |
-| 対話・台本案：`IdeaChatService` → `BackendAgentGateway` → `CloudTextGenerationJobClient` | `POST /v1/text-jobs`、`GET /v1/text-jobs/{id}` | `TextJobService` → Anthropicのmessages。systemと選んだuser/assistant履歴から応答 | Firestoreの所有者付きジョブに要求・状態・本文結果。実行中の部分本文を扱う経路もある |
-| 撮影準備：`StoryboardRecordingPreparationCloudSupport` → `CloudProjectGenerationJobClient` | `POST /v1/project-jobs`、`GET /v1/project-jobs/{id}` | 通し撮影用のテンプレートIDと変数 → Claude撮影プラン → OpenAI見本画像 | 要求はFirestore artifact（大きい場合は分割）、状態・構成結果はFirestore、生成画像はStorage |
-| 撮影後の発話認識：`StoryboardTranscriptionComparison` → `BackendAPIClient` | `POST /v1/recording-transcriptions` | `ExperimentalTranscriptionService`の制作経路 → GPT系本文認識とWhisperを並行実行。本文整理、時刻との照合 | 同期応答。このAPI内での音声の永続保存呼出しは今回確認していない |
-| 録画後の構成：`RecordingStructureRecovery` → `BackendAPIClient` | `POST /v1/recording-structure-jobs`、`GET /v1/recording-structure-jobs/{id}` | `RecordingStructureJobService` → `RecordingStructureService` → Claudeの構造化出力 → ID・原文・順番を検査 | 要求・結果JSONはStorage、所有者・状態・要求digest・参照はFirestore |
-| 素材候補の再提案：`RecordingMaterialSuggestions` → `BackendAPIClient` | `POST /v1/recording-material-suggestions/standalone` | 現在の発話構成 → Claude strict tool → 提案対象と構成を検査 | 同期応答。適用後は端末の制作データへ保存 |
-| AIナレーション：`CloudProjectGenerationJobClient`の音声を含む生成要求 | `POST /v1/project-jobs`、状態取得 | worker → Google TTS。セリフ・読み方・voice・音声形式を指定 | 生成音声はStorage、状態・音声参照はFirestore、取得後は端末にも保存 |
-| 文書の要約：`ProfileDocumentInsightService` → `AnthropicService` → `CloudTextGenerationJobClient` | `POST /v1/text-jobs`、状態取得 | 抽出文の抜粋・ファイル名 → Claude。Web検索は無効 | 要求・本文結果はFirestore、要約結果は端末プロフィール・本人メモリの材料へ |
-| 制作プロフィール：`UserProfileManager.saveNow` → `FirebaseService` | Firebase SDKによるFirestore読み書き | クラウド用の項目を選んで同期・復元。この同期自体はLLM処理ではない | アカウント別プロフィール文書 |
+| **A** 対話・台本案：`IdeaChatService` → `BackendAgentGateway` → `CloudTextGenerationJobClient` | `POST /v1/text-jobs`、`GET /v1/text-jobs/{id}` | `TextJobService` → Anthropicのmessages。systemと選んだuser/assistant履歴から応答 | Firestoreの所有者付きジョブに要求・状態・本文結果。実行中の部分本文を扱う経路もある |
+| **A** 撮影準備：`StoryboardRecordingPreparationCloudSupport` → `CloudProjectGenerationJobClient` | `POST /v1/project-jobs`、`GET /v1/project-jobs/{id}` | 通し撮影用のテンプレートIDと変数 → Claude撮影プラン → OpenAI見本画像 | 要求はFirestore artifact（大きい場合は分割）、状態・構成結果はFirestore、生成画像はStorage |
+| **B** 撮影後の発話認識：`StoryboardTranscriptionComparison` → `BackendAPIClient` | `POST /v1/recording-transcriptions` | `ExperimentalTranscriptionService`の制作経路 → GPT系本文認識とWhisperを並行実行。本文整理、時刻との照合 | 同期応答。このAPI内での音声の永続保存呼出しは今回確認していない |
+| **A** 録画後の構成：`RecordingStructureRecovery` → `BackendAPIClient` | `POST /v1/recording-structure-jobs`、`GET /v1/recording-structure-jobs/{id}` | `RecordingStructureJobService` → `RecordingStructureService` → Claudeの構造化出力 → ID・原文・順番を検査 | 要求・結果JSONはStorage、所有者・状態・要求digest・参照はFirestore |
+| **B** 素材候補の再提案：`RecordingMaterialSuggestions` → `BackendAPIClient` | `POST /v1/recording-material-suggestions/standalone` | 現在の発話構成 → Claude strict tool → 提案対象と構成を検査 | 同期応答。適用後は端末の制作データへ保存 |
+| **A** AIナレーション：`CloudProjectGenerationJobClient`の音声を含む生成要求 | `POST /v1/project-jobs`、状態取得 | worker → Google TTS。セリフ・読み方・voice・音声形式を指定 | 生成音声はStorage、状態・音声参照はFirestore、取得後は端末にも保存 |
+| **A** 文書の要約：`ProfileDocumentInsightService` → `AnthropicService` → `CloudTextGenerationJobClient` | `POST /v1/text-jobs`、状態取得 | 抽出文の抜粋・ファイル名 → Claude。Web検索は無効 | 要求・本文結果はFirestore、要約結果は端末プロフィール・本人メモリの材料へ |
+| **B** 必要時の字幕注釈確認：`FinalExportTelopPreflight` → `StoryboardLLMRecordingTelopAnnotationProvider` → `BackendAPIClient` | `POST /v1/recording-telop-annotations` | 現在の発話・シーンの情報 → Claudeの構造化出力 → 字幕と原文・範囲を照合。適合する保存済み注釈は再利用する経路 | 同期応答。端末で保存済み字幕と照合・反映。映像の合成とは別の処理 |
+| **SDK** 制作プロフィール：`UserProfileManager.saveNow` → `FirebaseService` | Firebase SDKによるFirestore読み書き | クラウド用の項目を選んで同期・復元。この同期自体はLLM処理ではない | アカウント別プロフィール文書 |
 
 各HTTP要求では`BackendAPIClient`がFirebase ID tokenとApp Check tokenを付けます。backendは認証とジョブの所有者を検査します。Cloud Tasksからworkerを呼ぶ内部要求はサービスアカウントのOIDCを使い、利用者のトークンをLLMへ中継する構成ではありません。
 
@@ -137,9 +157,11 @@ Claude構成のtoolは構成データを返すためのschemaで、モデルに�
 
 録画構成のprovider cacheは設定で有効化する経路があり、既定では有効になりません。有効時はsystemと発話catalogへcache指定が付き、無効時はproviderへ送る前にcache指定を外します。本文整理の`store=false`も、その要求の設定であり、クラウドジョブや全提供先の保存・保持を一括で止める設定ではありません。
 
-## 4. 非同期ジョブの通信順序
+## 4. アプリを離れた後、どの処理へ戻れるか
 
-対話・台本用の文字ジョブがCloud Tasksを使う場合の代表例です。queueを使わずbackend内で実行する文字ジョブの分岐もあります。録画構成ジョブはqueueが必須です。
+LLMの待ち時間にアプリを離れると、端末の監視taskや通信が止まることがあります。そこで、端末の監視寿命と、受け付けたクラウドジョブの処理・結果保存を分けました。会話では離脱時にpendingを保ったまま監視を止め、復帰時にアカウントと会話を照合して同じ要求を確認します。
+
+対話・台本用の文字ジョブがCloud Tasksを使う場合の代表例です。Cloud Runだけで継続・復旧が保証されるとはしていません。queueを使わずbackend内で実行する文字ジョブの分岐もありますが、instanceの寿命に依存し、永続queueと同等の耐久性を主張しません。録画構成ジョブはqueueが必須です。
 
 ```mermaid
 sequenceDiagram
@@ -155,11 +177,13 @@ sequenceDiagram
     B->>F: owner UID・要求・queued状態を保存
     B->>Q: ジョブIDを実行通知に載せる
     B-->>A: job ID・状態
+    Note over A: 離脱時：端末の監視を停止、pendingを保持
     Q->>W: OIDC付き内部要求でジョブを実行
     W->>F: 所有者付きジョブの要求を読む
     W->>L: system blocks・messages・モデル等
     L-->>W: 本文と使用量
     W->>F: 生成本文・完了状態を保存
+    Note over A: 復帰時：アカウント・同じ要求IDを照合
     loop 端末から状態を取得
         A->>B: GET /v1/text-jobs/{id} + 認証
         B->>F: ジョブを読み、owner UIDを照合
@@ -169,7 +193,16 @@ sequenceDiagram
     A->>A: 完了保存後に端末pendingを除く
 ```
 
-Cloud Tasksへ大きな会話本文を毎回載せるのではなく、保存したジョブを読む構成です。ジョブ要求・結果の保存場所はAPI表のとおり処理ごとに異なります。端末のpending解除と、クラウドの要求・結果の削除は別です。
+Cloud Tasksへ大きな会話本文を毎回載せるのではなく、保存したジョブを読む構成です。会話では、失われたPOST応答も先に同じclient job IDの`GET`で確認し、未作成を示す404の場合に限って同じ要求を送る経路があります。ジョブ要求・結果の保存場所はAPI表のとおり処理ごとに異なります。端末のpending解除と、クラウドの要求・結果の削除は別です。
+
+| 経路 | 離脱・復帰の扱い |
+| --- | --- |
+| **A 非同期ジョブ** | 受付・実行通知が成功したジョブをクラウドで進め、復帰時に同じIDで確認。所有者・編集元・状態を照合してから反映 |
+| **B 同期API** | 音声認識・素材候補・字幕注釈等はその場のHTTP応答。Aと同じ結果再取得の契約はない |
+| **C 端末の書き出し** | 現在は画面ロック・アプリがactiveでなくなった場合に中止。クラウド生成の離脱対応とは別 |
+| 完了通知 | 一部のプロジェクト生成には設定付きの通知経路がある。全ジョブの通知・背景での画面更新・自動反映は保証しない |
+
+送信が受理される前の離脱、認証切れ、queue設定やworkerの失敗は別の失敗条件です。「どんなタイミングで離れても必ず完了する」という説明にはしていません。
 
 録画の音声認識は、この非同期文字ジョブとは別の同期APIです。[音声認識・本文整理・Whisper時刻・Claude構成のシーケンス](architecture.md)も参照してください。
 
