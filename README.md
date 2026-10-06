@@ -87,24 +87,28 @@
 ## 5. Architecture — 仕組み
 
 ```mermaid
-flowchart LR
-    subgraph Device["iPhone"]
-        App["SwiftUIの画面<br/>対話・台本・撮影・編集"]
-        Render["字幕付き動画の合成<br/>AVFoundation"]
-    end
-    subgraph Cloud["Google Cloud / Firebase"]
-        API["Cloud Run API（FastAPI）<br/>認証・利用量の確認・ジョブ受付"]
-        Worker["Cloud Tasks → worker<br/>AIの呼び出しと出力の検査"]
-        DB[("Firestore / Cloud Storage<br/>ジョブの状態と結果")]
-    end
+flowchart TD
+    App["iPhoneアプリ（SwiftUI）<br/>対話・台本・撮影・編集"]
+    Render["端末で字幕付き動画を合成<br/>AVFoundation"]
+    API["Cloud Run API（FastAPI）<br/>認証・利用量の確認・ジョブ受付"]
+    Worker["Cloud Tasks → worker<br/>AIの呼び出しと出力の検査"]
+    DB[("Firestore / Cloud Storage<br/>ジョブの状態と結果")]
     AI["外部AI<br/>Claude / OpenAI / Gemini / Google TTS"]
     App -->|"生成を依頼・同じIDで結果を取得"| API
-    API --> DB
+    App --> Render
     API --> Worker
+    API --> DB
     Worker --> AI
     Worker --> DB
-    App --> Render
+    classDef local fill:#eff6ff,stroke:#2563eb,color:#111827
+    classDef cloud fill:#f0fdf4,stroke:#16a34a,color:#111827
+    classDef external fill:#fff7ed,stroke:#ea580c,color:#111827
+    class App,Render local
+    class API,Worker,DB cloud
+    class AI external
 ```
+
+青は端末、緑はアプリのクラウド、橙は外部のAIです。
 
 - **AIへの通信はサーバー経由**：アプリはFirebaseのログイン情報とApp Checkを付けて自分のAPIだけを呼び、AIの鍵はサーバー側にだけ置いています。
 - **長い処理はジョブにする**：Cloud Tasksで実行して結果を保存し、アプリは後から同じIDで受け取ります。
