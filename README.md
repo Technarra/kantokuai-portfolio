@@ -6,7 +6,7 @@
 
 > 課題・要求・設計・実装・改善を説明するポートフォリオです。本体コードは非公開。説明は2026-10-05に確認したiOS・共通backendの実装に基づき、全機能の実機再検証や利用効果の実証とは区別しています。
 
-[動画制作とAIの設計](docs/architecture.md) · [検証結果](docs/validation.md) · [もう一つのプロジェクト：コウジョー](https://github.com/Technarra/kojo-portfolio)
+[動画制作とAIの設計](docs/architecture.md) · [画面と制作フロー](docs/screenshots.md) · [検証結果](docs/validation.md) · [もう一つのプロジェクト：コウジョー](https://github.com/Technarra/kojo-portfolio)
 
 ## 1. Overview
 
@@ -41,13 +41,34 @@ Android本体は別管理です。この資料で説明するiOS・共通backend
 
 ## 5. Screenshots / Demo — 開発画面
 
-| 企画の対話 | 動画・字幕の編集 | 編集への提案 |
+**利用の流れ：** 企画の対話 → 台本・シーンの見直し → 撮影方法・カンペ設定 → 撮影 → 字幕・素材の編集 → 書き出し。
+
+### 企画・台本：本人の題材を、撮影できる内容へ
+
+| ① 企画の対話 | ② 台本の確認 | ③ シーンの修正指示 |
 | --- | --- | --- |
-| <img src="assets/kantokuai-ui-chat.png" width="260" alt="企画を対話で具体化する開発画面"> | <img src="assets/kantokuai-ui-editor.png" width="260" alt="素材と字幕をタイムラインで編集する開発画面"> | <img src="assets/kantokuai-ui-proposal.png" width="260" alt="編集内容に対するAI提案を確認する開発画面"> |
+| <img src="assets/kantokuai-ui-chat.png" width="260" alt="工場を題材としたデモで企画を対話する画面"> | <img src="assets/kantokuai-ui-script.png" width="260" alt="工場デモの台本をシーンごとに確認する画面"> | <img src="assets/kantokuai-ui-scene-revision.png" width="260" alt="セリフや撮影方法などの修正対象を選ぶ入口の画面"> |
+| AIとの対話で、伝える内容を具体化。 | セリフをシーン単位で読み、撮影へ進む。 | 修正したい内容を指示する入口。画像は修正前の状態。 |
 
-**利用の流れ：** 企画の対話 → 台本 → シーン・撮影準備 → 撮影・素材編集 → 字幕確認 → 書き出し。
+### 撮影：話す内容を見ながら、素材を用意する
 
-2026年9月の紹介資料に掲載した開発画面です。原資料には9月11日の実機と9月14日のsimulatorが混在し、上の3枚を同じ環境の一巡記録とは扱いません。現在の配布版や全機能の動作証明ではありません。30〜60秒の通しデモは今後の課題です。
+| ④ 撮影方法の選択 | ⑤ カンペの収録設定 | ⑥ カンペ付きの撮影 |
+| --- | --- | --- |
+| <img src="assets/kantokuai-ui-capture-entry.png" width="260" alt="自分の声・端末の動画・AI音声から撮影方法を選ぶ画面"> | <img src="assets/kantokuai-ui-recording-settings.png" width="260" alt="カンペの文字サイズとスクロール速度を調整する画面"> | <img src="assets/kantokuai-ui-camera.png" width="260" alt="台本のカンペを重ねた実機のカメラ画面"> |
+| 自分の声、既存動画、AI音声から制作方法を選ぶ。 | 文字サイズと速度を調整し、読みやすさを確認。 | 台本をカメラ内に表示し、話す内容を支える。 |
+
+④の撮影プラン欄は未入力のデモ状態です。生成済みの撮影プランを示す画像ではありません。⑥は別の説明動画の実機画面です。
+
+### 編集：AIの提案を確認し、字幕と素材を仕上げる
+
+| ⑦ 動画・字幕の編集 | ⑧ 素材提案の確認 | ⑨ 素材を追加する入口 |
+| --- | --- | --- |
+| <img src="assets/kantokuai-ui-editor.png" width="260" alt="素材と字幕をタイムラインで編集する実機画面"> | <img src="assets/kantokuai-ui-proposal.png" width="260" alt="補足素材の内容と提案理由を確認する実機画面"> | <img src="assets/kantokuai-ui-add-material.png" width="260" alt="デモ動画のセリフに対して撮影・写真・参考画像を追加する画面"> |
+| 発話と字幕を見ながら、時間軸上で調整。 | 候補と提案理由を見て、採用を判断。 | 撮影・写真・参考画像の追加方法を選ぶ。 |
+
+[全9画面の拡大表示・体験設計・AIの役割・撮影条件・素材出典](docs/screenshots.md)をまとめています。
+
+2026年9月9日・11日・14日の実アプリの開発画面を、制作段階に沿って並べたものです。実機・Simulator、工場の架空デモ・別の説明動画が混在しています。画面の内容は元のスクリーンショットのまま掲載しています。同じ動画の通し操作や現在の配布版の動作証明ではなく、書き出しまで通した30〜60秒のデモは今後の課題です。
 
 ## 6. Architecture — 動画制作の体験とAIの分担
 
